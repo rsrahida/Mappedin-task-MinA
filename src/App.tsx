@@ -8,7 +8,7 @@ import {
 import "./App.css";
 import { Search, FloorSelector, ZoomControls } from "@mappedin/react-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Floor, LocationProfile } from "@mappedin/mappedin-js";
+import type { Floor, LocationProfile, Space } from "@mappedin/mappedin-js";
 import "@mappedin/react-ui/themes/mappedin-light.css";
 import { DOORS } from "@mappedin/mappedin-js";
 import booleanContains from "@turf/boolean-contains";
@@ -45,39 +45,272 @@ const categoryConfig: Record<string, { color: string; icon: string }> = {
   },
 };
 
-function showFloorContent(mapView: any, floor: any) {
-  mapView.updateState(floor, {
-    visible: true,
-    altitude: 0,
-    geometry: { visible: true },
-    images: { enabled: true },
-    labels: { enabled: true },
-    markers: { enabled: true },
-    paths: { enabled: true },
-  });
+type WayfindingMode = "idle" | "selectingStart" | "selectingEnd" | "navigating";
+
+interface WayfindingPanelProps {
+  mode: WayfindingMode;
+  startSpace: Space | null;
+  endSpace: Space | null;
+  onStartClick: () => void;
+  onEndClick: () => void;
+  onClear: () => void;
+  onDraw: () => void;
+  isLoading: boolean;
+  error: string | null;
 }
 
+function WayfindingPanel({
+  mode,
+  startSpace,
+  endSpace,
+  onStartClick,
+  onEndClick,
+  onClear,
+  onDraw,
+  isLoading,
+  error,
+}: WayfindingPanelProps) {
+  const canDraw = startSpace && endSpace && mode !== "navigating";
+
+  return (
+    <div
+      style={{
+        background: "white",
+        borderRadius: 14,
+        boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+        padding: "14px 16px",
+        fontFamily: "'Segoe UI', sans-serif",
+        minWidth: 280,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 12,
+        }}
+      >
+        <span style={{ fontWeight: 700, fontSize: 14, color: "#1a1a1a" }}>
+          Yolunuz:
+        </span>
+        {(startSpace || endSpace || mode === "navigating") && (
+          <button
+            onClick={onClear}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "#888",
+              fontSize: 12,
+              padding: "2px 6px",
+              borderRadius: 6,
+              transition: "all 0.15s",
+            }}
+            onMouseEnter={(e) =>
+              ((e.target as HTMLButtonElement).style.background = "#f5f5f5")
+            }
+            onMouseLeave={(e) =>
+              ((e.target as HTMLButtonElement).style.background = "none")
+            }
+          >
+            Yolu təmizlə
+          </button>
+        )}
+      </div>
+      <SpaceSelector
+        label="Başlanğıc məkan:"
+        color="#1a7a4a"
+        icon="🟢"
+        space={startSpace}
+        isSelecting={mode === "selectingStart"}
+        onClick={onStartClick}
+      />
+      <div
+        style={{
+          textAlign: "center",
+          fontSize: 16,
+          color: "#aaa",
+          margin: "4px 0",
+        }}
+      >
+        ↓
+      </div>
+      <SpaceSelector
+        label="Təyinat nöqtəsi:"
+        color="#c0392b"
+        icon="🔴"
+        space={endSpace}
+        isSelecting={mode === "selectingEnd"}
+        onClick={onEndClick}
+      />
+      {mode !== "navigating" && (
+        <button
+          onClick={onDraw}
+          disabled={!canDraw || isLoading}
+          style={{
+            marginTop: 10,
+            width: "100%",
+            padding: "10px",
+            background: canDraw && !isLoading ? "#1571e8" : "#e0e0e0",
+            color: canDraw && !isLoading ? "white" : "#aaa",
+            border: "none",
+            borderRadius: 8,
+            fontWeight: 600,
+            fontSize: 13,
+            cursor: canDraw && !isLoading ? "pointer" : "not-allowed",
+            transition: "all 0.2s",
+          }}
+        >
+          {isLoading ? "Hesablanır..." : "Marşrutu Göstər"}
+        </button>
+      )}
+
+      {mode === "navigating" && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: "10px",
+            background: "#e8f5e9",
+            borderRadius: 8,
+            fontSize: 12,
+            color: "#2e7d32",
+            fontWeight: 600,
+            textAlign: "center",
+          }}
+        >
+          Marşrut göstərilir
+        </div>
+      )}
+      {(mode === "selectingStart" || mode === "selectingEnd") && (
+        <div
+          style={{
+            marginTop: 8,
+            padding: "8px 10px",
+            background: "#fff8e1",
+            borderRadius: 8,
+            fontSize: 11,
+            color: "#f57f17",
+            fontWeight: 500,
+            textAlign: "center",
+          }}
+        >
+          {mode === "selectingStart"
+            ? "Xəritədə başlanğıc otağı seçin"
+            : "Xəritədə təyinat otağı seçin"}
+        </div>
+      )}
+      {error && (
+        <div
+          style={{
+            marginTop: 8,
+            padding: "8px 10px",
+            background: "#ffebee",
+            borderRadius: 8,
+            fontSize: 11,
+            color: "#c62828",
+            fontWeight: 500,
+          }}
+        >
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SpaceSelector({
+  label,
+  color,
+  icon,
+  space,
+  isSelecting,
+  onClick,
+}: {
+  label: string;
+  color: string;
+  icon: string;
+  space: Space | null;
+  isSelecting: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 10px",
+        background: isSelecting ? "#e3f2fd" : "#f5f5f5",
+        border: isSelecting ? `2px solid ${color}` : "2px solid transparent",
+        borderRadius: 8,
+        cursor: "pointer",
+        textAlign: "left",
+        transition: "all 0.15s",
+      }}
+    >
+      <span style={{ fontSize: 14 }}>{icon}</span>
+      <div style={{ flex: 1, overflow: "hidden" }}>
+        <div style={{ fontSize: 10, color: "#888", fontWeight: 600 }}>
+          {label}
+        </div>
+        <div
+          style={{
+            fontSize: 12,
+            color: space ? "#1a1a1a" : "#bbb",
+            fontWeight: space ? 600 : 400,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {isSelecting
+            ? "Xəritədən seçin..."
+            : space
+              ? space.name || "Adsız otaq"
+              : "Seçilməyib"}
+        </div>
+      </div>
+      {!isSelecting && <span style={{ fontSize: 10, color: "#aaa" }}>✎</span>}
+    </button>
+  );
+}
 function AppUI({
   mapView,
   mapData,
   buildingStatus,
   markers,
-  setMarkers,
+  wayfindingMode,
+  wayfindingStart,
+  wayfindingEnd,
+  wayfindingLoading,
+  wayfindingError,
+  onWayfindingStartClick,
+  onWayfindingEndClick,
+  onWayfindingClear,
+  onWayfindingDraw,
 }: {
   mapView: any;
   mapData: any;
   buildingStatus: { inside: boolean; name?: string } | null;
   markers: any[];
-  setMarkers: React.Dispatch<React.SetStateAction<any[]>>;
+  wayfindingMode: WayfindingMode;
+  wayfindingStart: Space | null;
+  wayfindingEnd: Space | null;
+  wayfindingLoading: boolean;
+  wayfindingError: string | null;
+  onWayfindingStartClick: () => void;
+  onWayfindingEndClick: () => void;
+  onWayfindingClear: () => void;
+  onWayfindingDraw: () => void;
 }) {
   const [currentFloor, setCurrentFloor] = useState<Floor>(mapView.currentFloor);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLocation, setSelectedLocation] =
     useState<LocationProfile | null>(null);
   const [multiFloorEnabled, setMultiFloorEnabled] = useState(false);
-  const [visibleFloorElevations, setVisibleFloorElevations] = useState<
-    number[]
-  >([]);
 
   useEffect(() => {
     const handleFloorChange = (payload: any) => setCurrentFloor(payload.floor);
@@ -88,7 +321,6 @@ function AppUI({
   const handleFloorSelected = useCallback(
     (floor: Floor) => {
       mapView.setFloor(floor);
-
       if (multiFloorEnabled) {
         const allFloors: Floor[] = mapData.getByType("floor");
         allFloors.forEach((f: any) => {
@@ -110,51 +342,37 @@ function AppUI({
   const handleMultiFloorToggle = useCallback(() => {
     const next = !multiFloorEnabled;
     setMultiFloorEnabled(next);
-
     const allFloors: Floor[] = mapData.getByType("floor");
     const DISTANCE = 10;
 
     if (next) {
       mapView.Camera.setPanMode("elevation");
       mapView.manualFloorVisibility = true;
-
       allFloors.forEach((floor: any) => {
         const isActive = floor.id === mapView.currentFloor.id;
-        const newAltitude = floor.elevation * DISTANCE;
         mapView.updateState(floor, {
           visible: true,
           altitude: 0,
-          geometry: {
-            visible: true,
-            opacity: isActive ? 1.0 : 0.0,
-          },
+          geometry: { visible: true, opacity: isActive ? 1.0 : 0.0 },
           images: { enabled: true },
           labels: { enabled: true },
           markers: { enabled: true },
           paths: { enabled: true },
         });
-
         mapView.animateState(
           floor,
-          {
-            altitude: newAltitude,
-            geometry: { opacity: 1.0 },
-          },
+          { altitude: floor.elevation * DISTANCE, geometry: { opacity: 1.0 } },
           { duration: 700, easing: "ease-in-out" },
         );
       });
     } else {
       mapView.Camera.setPanMode("default");
       mapView.manualFloorVisibility = false;
-
       allFloors.forEach((floor: any) => {
         const isActive = floor.id === mapView.currentFloor.id;
         mapView.animateState(
           floor,
-          {
-            altitude: 0,
-            geometry: { opacity: isActive ? 1.0 : 0.0 },
-          },
+          { altitude: 0, geometry: { opacity: isActive ? 1.0 : 0.0 } },
           { duration: 700, easing: "ease-in-out" },
         );
         setTimeout(() => {
@@ -171,35 +389,9 @@ function AppUI({
           }
         }, 700);
       });
-
-      setVisibleFloorElevations([]);
     }
   }, [multiFloorEnabled, mapData, mapView]);
-  const handleFloorVisibilityToggle = useCallback(
-    (elevation: number) => {
-      const floor = mapData
-        .getByType("floor")
-        .find((f: any) => f.elevation === elevation);
-      if (!floor) return;
-      const isVisible = visibleFloorElevations.includes(elevation);
-      if (isVisible) {
-        mapView.updateState(floor, {
-          geometry: { visible: false },
-          images: { enabled: false },
-          labels: { enabled: false },
-          markers: { enabled: false },
-          paths: { enabled: false },
-        });
-        setVisibleFloorElevations((prev) =>
-          prev.filter((e) => e !== elevation),
-        );
-      } else {
-        showFloorContent(mapView, floor);
-        setVisibleFloorElevations((prev) => [...prev, elevation]);
-      }
-    },
-    [mapData, mapView, visibleFloorElevations],
-  );
+
   const defaultResults = useMemo(
     () =>
       [...mapData.getByType("location-profile")]
@@ -258,13 +450,9 @@ function AppUI({
     [mapView],
   );
 
-  const allFloors: Floor[] = mapData.getByType("floor");
-  const otherFloors = allFloors.filter(
-    (f: any) => f.elevation !== (currentFloor as any)?.elevation,
-  );
-
   return (
     <>
+      {/* Top-left: Search + building status */}
       <div
         style={{
           position: "absolute",
@@ -272,6 +460,9 @@ function AppUI({
           top: 20,
           left: 20,
           zIndex: 999,
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
         }}
       >
         <Search
@@ -281,7 +472,39 @@ function AppUI({
           onLocationSelected={setSelectedLocation}
           searchFn={searchFn}
         />
+        {buildingStatus && (
+          <div
+            style={{
+              background: buildingStatus.inside ? "#1a7a4a" : "#c0392b",
+              color: "white",
+              padding: "10px 20px",
+              borderRadius: 10,
+              fontSize: 14,
+              fontWeight: 500,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+            }}
+          >
+            {buildingStatus.inside
+              ? `${buildingStatus.name} binasının içindəsiniz`
+              : "Seçdiyiniz koordinat binanın içərisində deyil."}
+          </div>
+        )}
+
+        {/* Wayfinding panel — below the search bar */}
+        <WayfindingPanel
+          mode={wayfindingMode}
+          startSpace={wayfindingStart}
+          endSpace={wayfindingEnd}
+          onStartClick={onWayfindingStartClick}
+          onEndClick={onWayfindingEndClick}
+          onClear={onWayfindingClear}
+          onDraw={onWayfindingDraw}
+          isLoading={wayfindingLoading}
+          error={wayfindingError}
+        />
       </div>
+
+      {/* Top-right: Floor selector */}
       <div
         style={{
           position: "absolute",
@@ -294,33 +517,19 @@ function AppUI({
           gap: 12,
         }}
       >
-        {buildingStatus && (
-          <div
-            style={{
-              background: buildingStatus.inside ? "#1a7a4a" : "#c0392b",
-              color: "white",
-              padding: "10px 16px",
-              borderRadius: 10,
-              fontSize: 14,
-              fontWeight: 500,
-              boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
-              maxWidth: 280,
-            }}
-          >
-            {buildingStatus.inside
-              ? `${buildingStatus.name} binasının içindəsiniz`
-              : "Seçdiyiniz koordinat binanın içərisində deyil."}
-          </div>
-        )}
         <FloorSelector
           currentFloor={currentFloor}
           floors={mapData.getByType("floor")}
           onFloorSelected={handleFloorSelected}
         />
       </div>
+
+      {/* Bottom-right: Zoom */}
       <div style={{ position: "absolute", right: 20, bottom: 20, zIndex: 999 }}>
         <ZoomControls onZoomIn={handleZoomIn} onZoomOut={handleZoomOut} />
       </div>
+
+      {/* Bottom-left: Multi-floor toggle */}
       <div
         style={{
           position: "absolute",
@@ -356,6 +565,8 @@ function AppUI({
           </button>
         </div>
       </div>
+
+      {/* Markers */}
       {markers.map((marker) => (
         <Marker
           key={marker.id}
@@ -383,16 +594,22 @@ function AppUI({
 function MapBridge({
   onReady,
   onBuildingStatus,
-  markers,
   setMarkers,
+  wayfindingMode,
+  onSpaceClickedForWayfinding,
 }: {
   onReady: (handles: { mapData: any; mapView: any }) => void;
   onBuildingStatus: (status: { inside: boolean; name?: string } | null) => void;
-  markers: any[];
   setMarkers: React.Dispatch<React.SetStateAction<any[]>>;
+  wayfindingMode: WayfindingMode;
+  onSpaceClickedForWayfinding: (space: Space) => void;
 }) {
   const { mapData, mapView } = useMap();
   const readyRef = useRef(false);
+  const modeRef = useRef(wayfindingMode);
+  useEffect(() => {
+    modeRef.current = wayfindingMode;
+  }, [wayfindingMode]);
 
   useEffect(() => {
     if (readyRef.current) return;
@@ -449,6 +666,16 @@ function MapBridge({
   }, [mapData, mapView]);
 
   useMapViewEvent("click", (event: any) => {
+    const mode = modeRef.current;
+
+    if (
+      (mode === "selectingStart" || mode === "selectingEnd") &&
+      event?.spaces?.length > 0
+    ) {
+      onSpaceClickedForWayfinding(event.spaces[0]);
+      return;
+    }
+
     const buildings = mapData
       .getByType("floor-stack")
       .filter((fs: any) => fs.type === "Building");
@@ -462,20 +689,22 @@ function MapBridge({
     });
     if (!found) onBuildingStatus({ inside: false });
 
-    if (event.markers.length > 0) {
-      setMarkers((prev) =>
-        prev.filter((m) => m.id !== event.markers[0].target.id),
-      );
-    } else if (event.spaces.length > 0) {
-      const space = event.spaces[0];
-      setMarkers((prev) => [
-        ...prev,
-        {
-          id: event.coordinate.id,
-          coordinate: event.coordinate,
-          text: space.name || "Unnamed Space",
-        },
-      ]);
+    if (mode === "idle" || mode === "navigating") {
+      if (event.markers.length > 0) {
+        setMarkers((prev) =>
+          prev.filter((m) => m.id !== event.markers[0].target.id),
+        );
+      } else if (event.spaces.length > 0) {
+        const space = event.spaces[0];
+        setMarkers((prev) => [
+          ...prev,
+          {
+            id: event.coordinate.id,
+            coordinate: event.coordinate,
+            text: space.name || "Unnamed Space",
+          },
+        ]);
+      }
     }
   });
 
@@ -498,6 +727,90 @@ export default function App() {
     name?: string;
   } | null>(null);
   const [markers, setMarkers] = useState<any[]>([]);
+
+  const [wayfindingMode, setWayfindingMode] = useState<WayfindingMode>("idle");
+  const [wayfindingStart, setWayfindingStart] = useState<Space | null>(null);
+  const [wayfindingEnd, setWayfindingEnd] = useState<Space | null>(null);
+  const [wayfindingLoading, setWayfindingLoading] = useState(false);
+  const [wayfindingError, setWayfindingError] = useState<string | null>(null);
+
+  const handleWayfindingStartClick = useCallback(() => {
+    setWayfindingMode((prev) =>
+      prev === "selectingStart" ? "idle" : "selectingStart",
+    );
+  }, []);
+
+  const handleWayfindingEndClick = useCallback(() => {
+    setWayfindingMode((prev) =>
+      prev === "selectingEnd" ? "idle" : "selectingEnd",
+    );
+  }, []);
+
+  const handleWayfindingClear = useCallback(() => {
+    setWayfindingStart(null);
+    setWayfindingEnd(null);
+    setWayfindingMode("idle");
+    setWayfindingError(null);
+    if (mapHandles) {
+      mapHandles.mapView.Navigation.clear();
+    }
+  }, [mapHandles]);
+
+  const handleSpaceClickedForWayfinding = useCallback(
+    (space: Space) => {
+      if (wayfindingMode === "selectingStart") {
+        setWayfindingStart(space);
+        setWayfindingMode("idle");
+        if (mapHandles) {
+          mapHandles.mapView.updateState(space, { color: "#4caf50" });
+        }
+      } else if (wayfindingMode === "selectingEnd") {
+        setWayfindingEnd(space);
+        setWayfindingMode("idle");
+        if (mapHandles) {
+          mapHandles.mapView.updateState(space, { color: "#f44336" });
+        }
+      }
+    },
+    [wayfindingMode, mapHandles],
+  );
+
+  const handleWayfindingDraw = useCallback(async () => {
+    if (!mapHandles || !wayfindingStart || !wayfindingEnd) return;
+    setWayfindingLoading(true);
+    setWayfindingError(null);
+
+    try {
+      const directions = await mapHandles.mapData.getDirections(
+        wayfindingStart,
+        wayfindingEnd,
+      );
+
+      if (!directions) {
+        setWayfindingError("Bu iki nöqtə arasında marşrut tapılmadı.");
+        setWayfindingLoading(false);
+        return;
+      }
+
+      mapHandles.mapView.Navigation.clear();
+      mapHandles.mapData.getByType("space").forEach((s: any) => {
+        mapHandles.mapView.updateState(s, { color: "initial" });
+      });
+
+      mapHandles.mapView.updateState(wayfindingStart, { color: "#4caf50" });
+      mapHandles.mapView.updateState(wayfindingEnd, { color: "#f44336" });
+
+      mapHandles.mapView.Navigation.draw(directions);
+
+      setWayfindingMode("navigating");
+    } catch (err: any) {
+      setWayfindingError(
+        err?.message ?? "Marşrut hesablanarkən xəta baş verdi.",
+      );
+    } finally {
+      setWayfindingLoading(false);
+    }
+  }, [mapHandles, wayfindingStart, wayfindingEnd]);
 
   if (isLoading)
     return (
@@ -558,8 +871,9 @@ export default function App() {
         <MapBridge
           onReady={setMapHandles}
           onBuildingStatus={setBuildingStatus}
-          markers={markers}
           setMarkers={setMarkers}
+          wayfindingMode={wayfindingMode}
+          onSpaceClickedForWayfinding={handleSpaceClickedForWayfinding}
         />
 
         {mapHandles && (
@@ -568,7 +882,15 @@ export default function App() {
             mapData={mapHandles.mapData}
             buildingStatus={buildingStatus}
             markers={markers}
-            setMarkers={setMarkers}
+            wayfindingMode={wayfindingMode}
+            wayfindingStart={wayfindingStart}
+            wayfindingEnd={wayfindingEnd}
+            wayfindingLoading={wayfindingLoading}
+            wayfindingError={wayfindingError}
+            onWayfindingStartClick={handleWayfindingStartClick}
+            onWayfindingEndClick={handleWayfindingEndClick}
+            onWayfindingClear={handleWayfindingClear}
+            onWayfindingDraw={handleWayfindingDraw}
           />
         )}
       </MapView>
