@@ -10,9 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mappedin/dynamic-focus": "^6.20.0-beta.0",
     "@mappedin/mappedin-js": "^6.20.0",
     "@mappedin/react-sdk": "^6.20.0",
     "@mappedin/react-ui": "^6.20.0-beta.0",
+    "@turf/boolean-contains": "^7.3.5",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
