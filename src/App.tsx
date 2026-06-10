@@ -452,7 +452,6 @@ function AppUI({
 
   return (
     <>
-      {/* Top-left: Search + building status */}
       <div
         style={{
           position: "absolute",
@@ -490,7 +489,6 @@ function AppUI({
           </div>
         )}
 
-        {/* Wayfinding panel — below the search bar */}
         <WayfindingPanel
           mode={wayfindingMode}
           startSpace={wayfindingStart}
@@ -504,7 +502,6 @@ function AppUI({
         />
       </div>
 
-      {/* Top-right: Floor selector */}
       <div
         style={{
           position: "absolute",
@@ -524,12 +521,10 @@ function AppUI({
         />
       </div>
 
-      {/* Bottom-right: Zoom */}
       <div style={{ position: "absolute", right: 20, bottom: 20, zIndex: 999 }}>
         <ZoomControls onZoomIn={handleZoomIn} onZoomOut={handleZoomOut} />
       </div>
 
-      {/* Bottom-left: Multi-floor toggle */}
       <div
         style={{
           position: "absolute",
@@ -566,7 +561,6 @@ function AppUI({
         </div>
       </div>
 
-      {/* Markers */}
       {markers.map((marker) => (
         <Marker
           key={marker.id}
@@ -853,7 +847,7 @@ export default function App() {
       </div>
     );
 
-  if (error) return <div>Xəta baş verdi: {error.message}</div>;
+  if (error) return <div>Xəta baş verdi:{error.message}</div>;
   if (!mapData) return <div>Data tapılmadı</div>;
 
   return (
